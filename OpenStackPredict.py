@@ -5,18 +5,19 @@ import logging
 import argparse
 from Trainer.TrainerOpenStack import model_fn, input_fn, predict_fn
 
-
 logging.basicConfig(level=logging.WARNING,
                     format='[%(asctime)s][%(levelname)s]: %(message)s')
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--threshold', type=int, default=23, metavar='N',
                         help='to determine the time series data is an anomaly or not.')
+    parser.add_argument('--num-candidates', type=int, default=1,
+                        help='number of top candidates to consider for prediction')
     args = parser.parse_args()
+    num_candidates = args.num_candidates
 
     ##############
     # Load Model #
@@ -29,18 +30,34 @@ if __name__ == '__main__':
     ###########
     test_abnormal_list = []
     with open('test_abnormal', 'r') as f:
-        for line in f.readlines():
-            line = list(map(lambda n: n - 1, map(int, line.strip().split())))
-            request = json.dumps({'line': line})
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue  # skip empty lines
+            try:
+                tokens = [token for token in line.split() if token.strip() != '']
+                line = [int(n) - 1 for n in tokens]
+            except Exception as e:
+                print(f"Skipping line due to error: {e}")
+                continue
+            request = json.dumps({'line': line, 'num_candidates': num_candidates})
             input_data = input_fn(request, 'application/json')
             response = predict_fn(input_data, model_info)
             test_abnormal_list.append(response)
 
     test_normal_list = []
     with open('test_normal', 'r') as f:
-        for line in f.readlines():
-            line = list(map(lambda n: n - 1, map(int, line.strip().split())))
-            request = json.dumps({'line': line})
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue  # skip empty lines
+            try:
+                tokens = [token for token in line.split() if token.strip() != '']
+                line = [int(n) - 1 for n in tokens]
+            except Exception as e:
+                print(f"Skipping line due to error: {e}")
+                continue
+            request = json.dumps({'line': line, 'num_candidates': num_candidates})
             input_data = input_fn(request, 'application/json')
             response = predict_fn(input_data, model_info)
             test_normal_list.append(response)

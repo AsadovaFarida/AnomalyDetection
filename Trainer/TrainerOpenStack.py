@@ -100,17 +100,34 @@ def _get_train_data_loader(batch_size, is_distributed, window_size, local, bucke
 
 # ... rest of your code remains unchanged until train() ...
 # ...existing code...
+#def save_model(model, model_dir, args):
+ #       """Save the PyTorch model to the specified directory."""
+ #       if not os.path.exists(model_dir):
+  #          os.makedirs(model_dir)
+   #     model_path = os.path.join(model_dir, "model.pth")
+    #    torch.save({
+     #       'model_state_dict': model.state_dict(),
+      #      'args': vars(args)
+      #  }, model_path)
+      #  print(f"Model saved to {os.path.join(args.model_dir, 'model.pth')}")
+
 def save_model(model, model_dir, args):
-        """Save the PyTorch model to the specified directory."""
-        if not os.path.exists(model_dir):
-            os.makedirs(model_dir)
-        model_path = os.path.join(model_dir, "model.pth")
-        torch.save({
-            'model_state_dict': model.state_dict(),
-            'args': vars(args)
-        }, model_path)
-        print(f"Model saved to {os.path.join(args.model_dir, 'model.pth')}")
-        
+    logger.info("Saving the model.")
+    path = os.path.join(model_dir, 'model.pth')
+    torch.save(model.cpu().state_dict(), path)
+    # Save arguments used to create model for restoring the model later
+    model_info_path = os.path.join(model_dir, 'model_info.pth')
+    with open(model_info_path, 'wb') as f:
+        model_info = {
+            'input_size': args.input_size,
+            'hidden_size': args.hidden_size,
+            'num_layers': args.num_layers,
+            'num_classes': args.num_classes,
+            'num_candidates': args.num_candidates,
+            'window_size': args.window_size,
+        }
+        torch.save(model_info, f)
+
 def train(args):
     is_distributed = len(args.hosts) > 1 and args.backend is not None
     logger.debug("Distributed training - {}".format(is_distributed))
@@ -183,6 +200,79 @@ def train(args):
         ))
     logger.debug('Finished Training')
     save_model(model, args.model_dir, args)
+
+
+def model_fn(model_dir):
+    logger.info('Loading the model.')
+    model_info = {}
+    with open(os.path.join(model_dir, 'model_info.pth'), 'rb') as f:
+        model_info = torch.load(f)
+    logger.debug('model_info: {}'.format(model_info))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info('Current device: {}'.format(device))
+    model = Model(input_size=model_info['input_size'],
+                  hidden_size=model_info['hidden_size'],
+                  num_layers=model_info['num_layers'],
+                  num_classes=model_info['num_classes'])
+    with open(os.path.join(model_dir, 'model.pth'), 'rb') as f:
+        model.load_state_dict(torch.load(f))
+    input_size = model_info['input_size']
+    window_size = model_info['window_size']
+    num_candidates = model_info['num_candidates']
+    return {'model': model.to(device),
+            'window_size': window_size,
+            'input_size': input_size,
+            'num_candidates': num_candidates}
+
+
+def input_fn(request_body, request_content_type):
+    logger.info('Deserializing the input data.')
+    if request_content_type == 'application/json':
+        input_data = json.loads(request_body)
+        return input_data
+    else:
+        raise ValueError("{} not supported by script!".format(request_content_type))
+
+
+def predict_fn(input_data, model_info):
+    logger.info('Predict next template on this pattern series.')
+    line = input_data['line']
+    # Fix: get num_candidates from input_data if present, else from model_info, else default to 1
+    num_candidates = input_data.get('num_candidates') or model_info.get('num_candidates') or 1
+    input_size = model_info['input_size']
+    window_size = model_info['window_size']
+    model = model_info['model']
+
+    logger.info(line)
+    logger.debug(num_candidates)
+    logger.debug(input_size)
+    logger.debug(window_size)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info('Current device: {}'.format(device))
+
+    predict_cnt = 0
+    anomaly_cnt = 0
+    predict_list = [0] * len(line)
+    for i in range(len(line) - window_size):
+        seq = line[i:i + window_size]
+        label = line[i + window_size]
+        seq = torch.tensor(seq, dtype=torch.float).view(-1, window_size, input_size).to(device)
+        label = torch.tensor(label).view(-1).to(device)
+        output = model(seq)
+        predict = torch.argsort(output, 1)[0][-num_candidates:]
+        if label not in predict:
+            anomaly_cnt += 1
+            predict_list[i + window_size] = 1
+        predict_cnt += 1
+    return {'anomaly_cnt': anomaly_cnt, 'predict_cnt': predict_cnt, 'predict_list': predict_list}
+
+def output_fn(prediction, accept):
+    logger.info('Serializing the generated output.')
+    if accept == "application/json":
+        return json.dumps(prediction), accept
+    raise ValueError("{} accept type is not supported by this script".format(accept))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
