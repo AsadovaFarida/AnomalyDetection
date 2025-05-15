@@ -3,6 +3,9 @@ sys.path.append('../')
 import json
 import logging
 import argparse
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
 from Trainer.TrainerOpenStack import model_fn, input_fn, predict_fn
 
 logging.basicConfig(level=logging.WARNING,
@@ -113,3 +116,31 @@ if __name__ == '__main__':
     logger.info(f'Precision: {precision}')
     logger.info(f'Recall: {recall}')
     logger.info(f'F1: {F1}')
+
+    # -------- Visualization --------
+    # Confusion Matrix
+    cm = confusion_matrix(ground_truth, predict)
+    plt.figure(figsize=(4, 4))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Normal', 'Abnormal'], yticklabels=['Normal', 'Abnormal'])
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.title('Confusion Matrix')
+    plt.show()
+
+    # Bar Plot of Metrics
+    metrics = {'Accuracy': accuracy, 'Precision': precision, 'Recall': recall, 'F1': F1}
+    plt.figure()
+    plt.bar(metrics.keys(), metrics.values())
+    plt.ylim(0, 1)
+    plt.title('Evaluation Metrics')
+    plt.show()
+
+    # Histogram of Anomaly Counts
+    plt.figure()
+    plt.hist(abnormal_cnt_anomaly, bins=20, alpha=0.7, label='Abnormal')
+    plt.hist(normal_cnt_anomaly, bins=20, alpha=0.7, label='Normal')
+    plt.xlabel('Anomaly Count')
+    plt.ylabel('Number of Sequences')
+    plt.legend()
+    plt.title('Distribution of Anomaly Counts')
+    plt.show()
