@@ -68,3 +68,4 @@ if __name__ == '__main__':
         raise ValueError("S3 bucket name must be provided for non-local mode. Use --bucket your-bucket-name")
 
     train(args)
+    logger.debug('Finished Training')

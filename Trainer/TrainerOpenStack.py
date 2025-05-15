@@ -100,7 +100,17 @@ def _get_train_data_loader(batch_size, is_distributed, window_size, local, bucke
 
 # ... rest of your code remains unchanged until train() ...
 # ...existing code...
-
+def save_model(model, model_dir, args):
+        """Save the PyTorch model to the specified directory."""
+        if not os.path.exists(model_dir):
+            os.makedirs(model_dir)
+        model_path = os.path.join(model_dir, "model.pth")
+        torch.save({
+            'model_state_dict': model.state_dict(),
+            'args': vars(args)
+        }, model_path)
+        print(f"Model saved to {os.path.join(args.model_dir, 'model.pth')}")
+        
 def train(args):
     is_distributed = len(args.hosts) > 1 and args.backend is not None
     logger.debug("Distributed training - {}".format(is_distributed))
@@ -172,17 +182,7 @@ def train(args):
             epoch, args.epochs, round(train_loss/len(train_loader.dataset), 4)
         ))
     logger.debug('Finished Training')
-   
-    def save_model(model, model_dir, args):
-        """Save the PyTorch model to the specified directory."""
-        if not os.path.exists(model_dir):
-            os.makedirs(model_dir)
-        model_path = os.path.join(model_dir, "model.pth")
-        torch.save({
-            'model_state_dict': model.state_dict(),
-            'args': vars(args)
-        }, model_path)
-        print(f"Model saved to {os.path.join(args.model_dir, 'model.pth')}")
+    save_model(model, args.model_dir, args)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
